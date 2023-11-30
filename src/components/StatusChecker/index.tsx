@@ -29,7 +29,7 @@ const StatusChecker = () => {
 
   useEffect(() => {
     if (!data?.restartRequired) {
-      setAlertDismissed(false);
+      setAlertDismissed(true);
     }
   }, [data?.restartRequired]);
 

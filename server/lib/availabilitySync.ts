@@ -3,7 +3,11 @@ import PlexAPI from '@server/api/plexapi';
 import RadarrAPI, { type RadarrMovie } from '@server/api/servarr/radarr';
 import type { SonarrSeason, SonarrSeries } from '@server/api/servarr/sonarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
-import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
+import {
+  MediaRequestStatus,
+  MediaStatus,
+  MediaType,
+} from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import MediaRequest from '@server/entity/MediaRequest';
@@ -334,13 +338,44 @@ class AvailabilitySync {
         { label: 'AvailabilitySync' }
       );
 
+      logger.debug('Media not found in Plex - re requesting it', {
+        label: 'TULLY',
+      });
+
       await mediaRepository.save({ media, ...media });
+
+      // TULLY
+      const userRepository = getRepository(User);
+
+      const users = await userRepository
+        .createQueryBuilder('user')
+        .addSelect('user.plexToken')
+        .leftJoinAndSelect('user.settings', 'settings')
+        .where("user.plexToken != ''")
+        .getMany();
+
+      const reqUser: User = users[0];
+
+      //Re-Request media that was removed
+      await MediaRequest.request(
+        {
+          mediaId: media.tmdbId,
+          mediaType: media.mediaType,
+          seasons: media.mediaType === MediaType.TV ? 'all' : undefined,
+          tvdbId: media.tvdbId,
+        },
+        reqUser,
+        { isAutoRequest: true }
+      );
 
       // Only delete media request if type is movie.
       // Type tv request deletion is handled
       // in the season request entity
       if (requests.length > 0 && media.mediaType === 'movie') {
         await requestRepository.remove(requests);
+        logger.info(`The ${media.tmdbId} will not be removed`, {
+          label: 'AvailabilitySync',
+        });
       }
     } catch (ex) {
       logger.debug(
